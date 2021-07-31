@@ -99,7 +99,9 @@ def main(event, context=None):  # pylint: disable=unused-argument
                 assert (key in coborrower['mailingAddress']), 'missing %s from coborrower mailing address' % key
 
             # FTR CC-01: prevent duplicate addresses in residence report
+            flag = False
             if borrower['mailingAddress'] == coborrower['mailingAddress']:
+                flag = True
                 index = 0
                 while index < len(rules):
                     if 'coborrower.mailingAddress' in rules[index]['source']:
@@ -108,14 +110,16 @@ def main(event, context=None):  # pylint: disable=unused-argument
                         index += 1
 
             manifest = JSONManifest(loan, rules)
-            logger.info(
-                'Generated manifest: %s', json.dumps(manifest.items, indent=2)
-            )
+            logger.info('Generated manifest: %s', json.dumps(manifest.items, indent=2))
 
             projection = JSONFactory(manifest).get_projection()
-            logger.info(
-                'Generated projection: %s', json.dumps(projection, indent=2)
-            )
+
+            # FTR CC-02: added shared_address attribute to borrowers report
+            for item in projection.get('reports', []):
+                if item['title'] == 'Borrowers Report':
+                    item['shared_address'] = flag
+
+            logger.info('Generated projection: %s', json.dumps(projection, indent=2))
 
             reports.extend(projection.get('reports', []))
         except Exception as e:
@@ -126,7 +130,6 @@ def main(event, context=None):  # pylint: disable=unused-argument
     # What if there happens to be multiple applicants with the same
     # residence address, or multiple loans with the same applicants?
     # here, the duplicates will be removed
-
     for item in reports:
         if item['title'] == 'Residences Report':
             tmp = []
