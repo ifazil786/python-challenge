@@ -86,6 +86,8 @@ def main(event, context=None):  # pylint: disable=unused-argument
             assert ('applications' in loan), 'missing applications'
             # Only using the first application for residence reports
             app = loan['applications'][0]
+
+            # Validating data
             assert ('borrower' in app), 'missing borrower'
             assert ('coborrower' in app), 'missing coborrower'
             borrower = app['borrower']
@@ -96,7 +98,7 @@ def main(event, context=None):  # pylint: disable=unused-argument
                 assert (key in borrower['mailingAddress']), 'missing %s from borrower mailing address' % key
                 assert (key in coborrower['mailingAddress']), 'missing %s from coborrower mailing address' % key
 
-            # FTR CC-01
+            # FTR CC-01: prevent duplicate addresses in residence report
             if borrower['mailingAddress'] == coborrower['mailingAddress']:
                 index = 0
                 while index < len(rules):
