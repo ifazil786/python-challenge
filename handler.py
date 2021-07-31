@@ -72,20 +72,69 @@ def main(event, context=None):  # pylint: disable=unused-argument
 
     logger.info('Service recieved loans: %s', json.dumps(loans, indent=2))
 
+    mailing_keys = [
+        'addressStreetLine1',
+        'addressCity',
+        'addressState',
+        'addressPostalCode'
+    ]
+
     # Generate Manifests
     reports = []
     for loan in loans:
-        manifest = JSONManifest(loan, rules)
-        logger.info(
-            'Generated manifest: %s', json.dumps(manifest.items, indent=2)
-        )
+        try:
+            assert ('applications' in loan), 'missing applications'
+            # Only using the first application for residence reports
+            app = loan['applications'][0]
+            assert ('borrower' in app), 'missing borrower'
+            assert ('coborrower' in app), 'missing coborrower'
+            borrower = app['borrower']
+            coborrower = app['coborrower']
+            assert ('mailingAddress' in borrower), 'missing mailingAddress from borrower'
+            assert ('mailingAddress' in coborrower), 'missing mailingAddress from coborrower'
+            for key in mailing_keys:
+                assert (key in borrower['mailingAddress']), 'missing %s from borrower mailing address' % key
+                assert (key in coborrower['mailingAddress']), 'missing %s from coborrower mailing address' % key
 
-        projection = JSONFactory(manifest).get_projection()
-        logger.info(
-            'Generated projection: %s', json.dumps(projection, indent=2)
-        )
+            # FTR CC-01
+            if borrower['mailingAddress'] == coborrower['mailingAddress']:
+                index = 0
+                while index < len(rules):
+                    if 'coborrower.mailingAddress' in rules[index]['source']:
+                        del rules[index]
+                    else:
+                        index += 1
 
-        reports.extend(projection.get('reports', []))
+            manifest = JSONManifest(loan, rules)
+            logger.info(
+                'Generated manifest: %s', json.dumps(manifest.items, indent=2)
+            )
+
+            projection = JSONFactory(manifest).get_projection()
+            logger.info(
+                'Generated projection: %s', json.dumps(projection, indent=2)
+            )
+
+            reports.extend(projection.get('reports', []))
+        except Exception as e:
+            logger.error('Service received invalid loan data -%s- Skipping event', str(e))
+
+    # FTR CC-01 Extra
+    # Remove duplicate residences:
+    # What if there happens to be multiple applicants with the same
+    # residence address, or multiple loans with the same applicants?
+    # here, the duplicates will be removed
+
+    for item in reports:
+        if item['title'] == 'Residences Report':
+            tmp = []
+            for index in range(len(item['residences'])):
+                residence = item['residences'][index]
+                if residence in tmp:
+                    del item['residences'][index]
+                else:
+                    tmp.append(residence)
+
 
     # Reformat report output and return
     return {'reports': reports}
